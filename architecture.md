@@ -1,3 +1,4 @@
+```mermaid
 graph TB
     %% Main System Components
     SUB[Hybrid Gaze Tracking System]
@@ -69,3 +70,4 @@ graph TB
     class VIS,OUT,DATA output
     class CONF config
     class PCAL,ACAL,CMOD,CALIB calibration
+```
