@@ -138,9 +138,7 @@ python gaze_tracker.py
 
 ## 🧑‍💻 Author
 
-**Bala Ji**  
-💼 Victo Hosting | Victo Interns  
-🌐 [victointern.site](https://victointern.site)
+**BalaJi**  
 
 ---
 
