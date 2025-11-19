@@ -1,5 +1,5 @@
 
-!pip install opencv-python mediapipe numpy pandas matplotlib scipy
+#!pip install opencv-python mediapipe numpy pandas matplotlib scipy
 
 #Import libraries and configuration
 import cv2
