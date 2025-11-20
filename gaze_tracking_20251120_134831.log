@@ -1,0 +1,11 @@
+2025-11-20 13:48:31,157 - SystemMonitor - INFO - System monitoring started
+2025-11-20 13:48:31,273 - HybridGazeTracker - INFO - Hybrid Gaze Tracker with Calibration and System Monitoring initialized successfully!
+2025-11-20 13:48:31,287 - HybridGazeTracker - INFO - CSV logging started: gaze_data_20251120_134831.csv
+2025-11-20 13:48:39,590 - GazeCalibrator - INFO - Starting point calibration...
+2025-11-20 13:48:39,614 - HybridGazeTracker - INFO - Point calibration started
+2025-11-20 13:49:06,899 - HybridGazeTracker - INFO - Calibration completed. Computing model...
+2025-11-20 13:49:06,950 - GazeCalibrator - INFO - Calibration model trained. MSE: 0.0327
+2025-11-20 13:49:06,965 - HybridGazeTracker - INFO - Calibration model computed successfully!
+2025-11-20 13:49:06,982 - GazeCalibrator - INFO - Calibration saved to gaze_calibration_20251120_134906.json
+2025-11-20 13:49:39,021 - SystemMonitor - INFO - System monitoring stopped
+2025-11-20 13:49:39,383 - HybridGazeTracker - INFO - CSV logging closed
