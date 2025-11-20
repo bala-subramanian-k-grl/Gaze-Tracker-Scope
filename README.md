@@ -89,16 +89,17 @@ python gaze_tracker.py
 
 ### Keyboard Controls
 
-tracking with calibration and system monitoring...
-Controls:
-  'q' - Quit
-  's' - Save data (JSON + CSV)
-  'c' - Start point calibration
-  'a' - Start automatic calibration
-  'l' - Load calibration
-  'r' - Reset calibration
-  'e' - Export calibration report
-  'm' - Show system metrics
+| Key   | Function                             |
+| ----- | ------------------------------------ |
+| **q** | Quit                                 |
+| **s** | Save gaze tracking data (JSON + CSV) |
+| **c** | Start point calibration              |
+| **a** | Automatic calibration                |
+| **l** | Load calibration                     |
+| **r** | Reset calibration                    |
+| **e** | Export calibration report            |
+| **m** | Show system performance metrics      |
+
 
 ---
 
