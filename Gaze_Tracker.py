@@ -1,5 +1,4 @@
-
-!pip install opencv-python mediapipe numpy pandas matplotlib scipy
+!pip install opencv-python mediapipe numpy pandas matplotlib scipy psutil
 
 #Import libraries and configuration
 import cv2
@@ -15,6 +14,10 @@ import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
 import math
 from enum import Enum
+import csv
+import os
+import psutil
+import threading
 
 # Initialize MediaPipe
 mp_face_mesh = mp.solutions.face_mesh
@@ -27,7 +30,7 @@ class CalibrationMode(Enum):
     POINT_CALIBRATION = 1
     AUTOMATIC_CALIBRATION = 2
 
-# Enhanced Configuration
+# Enhanced Configuration with logging
 class GazeConfig:
     CAMERA_ID = 0
     CAMERA_WIDTH = 1280
@@ -68,13 +71,72 @@ class GazeConfig:
     ]
     CALIBRATION_DURATION = 3.0  # seconds per point
     CALIBRATION_SAMPLES_PER_POINT = 30
+    
+    # System monitoring settings
+    SYSTEM_MONITOR_INTERVAL = 2.0  # seconds between system monitoring updates
+    
+    # Logging settings
+    LOG_LEVEL = logging.INFO
+    LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    ENABLE_FILE_LOGGING = True
 
 config = GazeConfig()
+
+# System Monitor Class
+class SystemMonitor:
+    def __init__(self, config: GazeConfig):
+        self.config = config
+        self.cpu_percent = 0.0
+        self.memory_used_mb = 0.0
+        self.memory_percent = 0.0
+        self.is_monitoring = False
+        self.monitor_thread = None
+        self.logger = logging.getLogger('SystemMonitor')
+        
+    def start_monitoring(self):
+        """Start system monitoring in a separate thread"""
+        self.is_monitoring = True
+        self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self.monitor_thread.start()
+        self.logger.info("System monitoring started")
+        
+    def stop_monitoring(self):
+        """Stop system monitoring"""
+        self.is_monitoring = False
+        if self.monitor_thread and self.monitor_thread.is_alive():
+            self.monitor_thread.join(timeout=1.0)
+        self.logger.info("System monitoring stopped")
+        
+    def _monitor_loop(self):
+        """Main monitoring loop"""
+        while self.is_monitoring:
+            try:
+                # Get CPU usage (blocking call, first call might return 0)
+                self.cpu_percent = psutil.cpu_percent(interval=0.5)
+                
+                # Get memory usage
+                memory_info = psutil.virtual_memory()
+                self.memory_used_mb = memory_info.used / (1024 * 1024)  # Convert to MB
+                self.memory_percent = memory_info.percent
+                
+            except Exception as e:
+                self.logger.error(f"System monitoring error: {e}")
+                
+            time.sleep(self.config.SYSTEM_MONITOR_INTERVAL)
+    
+    def get_system_stats(self) -> Dict[str, float]:
+        """Get current system statistics"""
+        return {
+            'cpu_percent': self.cpu_percent,
+            'memory_used_mb': self.memory_used_mb,
+            'memory_percent': self.memory_percent
+        }
 
 # Enhanced Head Pose Estimator Class
 class HeadPoseEstimator:
     def __init__(self, config: GazeConfig):
         self.config = config
+        self.logger = logging.getLogger('HeadPoseEstimator')
         
         # 3D model points for head pose estimation (in mm)
         self.model_3d_points = np.array([
@@ -142,7 +204,7 @@ class HeadPoseEstimator:
                 return self.smoothed_rotation, self.smoothed_translation, rotation_mat, translation_vec
                 
         except Exception as e:
-            print(f"Head pose estimation error: {e}")
+            self.logger.error(f"Head pose estimation error: {e}")
         
         return np.zeros(3), np.zeros(3), np.eye(3), np.zeros(3)
     
@@ -178,13 +240,14 @@ class HeadPoseEstimator:
         
         return head_gaze_x, head_gaze_y
 
-#  Calibration System
+# Enhanced Calibration System with logging
 class GazeCalibrator:
     def __init__(self, config: GazeConfig):
         self.config = config
         self.calibration_data = {}
         self.calibration_model = None
         self.is_calibrated = False
+        self.logger = logging.getLogger('GazeCalibrator')
         
     def start_point_calibration(self):
         """Start point-based calibration procedure"""
@@ -192,13 +255,13 @@ class GazeCalibrator:
         self.current_calibration_point = 0
         self.calibration_start_time = time.time()
         self.calibration_samples = {i: [] for i in range(len(self.config.CALIBRATION_POINTS))}
-        print("Starting point calibration...")
+        self.logger.info("Starting point calibration...")
         
     def start_automatic_calibration(self):
         """Start automatic calibration (collects data during normal use)"""
         self.calibration_mode = CalibrationMode.AUTOMATIC_CALIBRATION
         self.calibration_samples = {'auto': []}
-        print("Starting automatic calibration...")
+        self.logger.info("Starting automatic calibration...")
         
     def add_calibration_sample(self, point_index: int, raw_gaze_data: Dict, screen_point: Tuple[float, float]):
         """Add a calibration sample for the current point"""
@@ -251,7 +314,7 @@ class GazeCalibrator:
             all_targets.append([target_point[0], target_point[1]])
         
         if len(all_inputs) < 4:  # Need at least 4 points for good calibration
-            print(f"Not enough calibration points: {len(all_inputs)}")
+            self.logger.warning(f"Not enough calibration points: {len(all_inputs)}")
             return None
         
         # Convert to numpy arrays
@@ -278,14 +341,14 @@ class GazeCalibrator:
             # Test the model
             predictions = model.predict(X)
             mse = np.mean((predictions - y) ** 2)
-            print(f"Calibration model trained. MSE: {mse:.4f}")
+            self.logger.info(f"Calibration model trained. MSE: {mse:.4f}")
             
             self.is_calibrated = True
             self.calibration_model = model
             return model
             
         except Exception as e:
-            print(f"Error computing calibration model: {e}")
+            self.logger.error(f"Error computing calibration model: {e}")
             return None
     
     def _compute_automatic_calibration_model(self):
@@ -293,7 +356,7 @@ class GazeCalibrator:
         # This would use more advanced techniques like clustering
         # For now, use simple linear regression
         if 'auto' not in self.calibration_samples or len(self.calibration_samples['auto']) < 20:
-            print("Not enough automatic calibration samples")
+            self.logger.warning("Not enough automatic calibration samples")
             return None
             
         samples = self.calibration_samples['auto']
@@ -320,7 +383,7 @@ class GazeCalibrator:
             calibrated_y = np.clip(calibrated_coords[1], 0.0, 1.0)
             return calibrated_x, calibrated_y
         except Exception as e:
-            print(f"Calibration application error: {e}")
+            self.logger.error(f"Calibration application error: {e}")
             return raw_gaze_x, raw_gaze_y
     
     def save_calibration(self, filename: str = None):
@@ -342,9 +405,9 @@ class GazeCalibrator:
         try:
             with open(filename, 'w') as f:
                 json.dump(calibration_data, f, indent=2)
-            print(f"Calibration saved to {filename}")
+            self.logger.info(f"Calibration saved to {filename}")
         except Exception as e:
-            print(f"Error saving calibration: {e}")
+            self.logger.error(f"Error saving calibration: {e}")
     
     def load_calibration(self, filename: str) -> bool:
         """Load calibration data from file"""
@@ -355,11 +418,11 @@ class GazeCalibrator:
             # For simplicity, we're just loading the status
             # In a full implementation, you'd reconstruct the model
             self.is_calibrated = calibration_data.get('is_calibrated', False)
-            print(f"Calibration loaded: {self.is_calibrated}")
+            self.logger.info(f"Calibration loaded: {self.is_calibrated}")
             return self.is_calibrated
             
         except Exception as e:
-            print(f"Error loading calibration: {e}")
+            self.logger.error(f"Error loading calibration: {e}")
             return False
     
     def _get_model_coefficients(self):
@@ -386,10 +449,19 @@ class GazeCalibrator:
         except:
             return None
 
-#  Enhanced Hybrid Gaze Tracker with Calibration
+# Enhanced Hybrid Gaze Tracker with Calibration and Logging
 class HybridGazeTracker:
     def __init__(self, config: GazeConfig):
         self.config = config
+        
+        # Setup logging
+        self.setup_logging()
+        self.logger = logging.getLogger('HybridGazeTracker')
+        
+        # Initialize system monitor
+        self.system_monitor = SystemMonitor(config)
+        self.system_monitor.start_monitoring()
+        
         self.face_mesh = mp_face_mesh.FaceMesh(
             max_num_faces=config.MAX_NUM_FACES,
             refine_landmarks=config.REFINE_LANDMARKS,
@@ -417,8 +489,105 @@ class HybridGazeTracker:
         
         # Data storage
         self.gaze_data = []
+        self.csv_writer = None
+        self.csv_file = None
         
-        print("Hybrid Gaze Tracker with Calibration initialized successfully!")
+        self.logger.info("Hybrid Gaze Tracker with Calibration and System Monitoring initialized successfully!")
+    
+    def setup_logging(self):
+        """Setup logging configuration"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_filename = f"gaze_tracking_{timestamp}.log"
+        
+        logging.basicConfig(
+            level=self.config.LOG_LEVEL,
+            format=self.config.LOG_FORMAT,
+            handlers=[]
+        )
+        
+        # Create logger
+        logger = logging.getLogger()
+        
+        # Console handler
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(self.config.LOG_LEVEL)
+        console_handler.setFormatter(logging.Formatter(self.config.LOG_FORMAT))
+        logger.addHandler(console_handler)
+        
+        # File handler
+        if self.config.ENABLE_FILE_LOGGING:
+            file_handler = logging.FileHandler(log_filename, encoding='utf-8')
+            file_handler.setLevel(self.config.LOG_LEVEL)
+            file_handler.setFormatter(logging.Formatter(self.config.LOG_FORMAT))
+            logger.addHandler(file_handler)
+    
+    def setup_csv_logging(self, filename=None):
+        """Setup CSV logging for gaze data"""
+        if filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"gaze_data_{timestamp}.csv"
+        
+        try:
+            self.csv_file = open(filename, 'w', newline='', encoding='utf-8')
+            self.csv_writer = csv.writer(self.csv_file)
+            
+            # Write header with system monitoring columns
+            header = [
+                'timestamp', 'gaze_x', 'gaze_y', 'confidence', 'fps',
+                'eye_gaze_x', 'eye_gaze_y', 'head_gaze_x', 'head_gaze_y',
+                'raw_gaze_x', 'raw_gaze_y', 'eye_confidence', 'eye_closure_ratio',
+                'eye_weight', 'head_weight', 'pitch_deg', 'yaw_deg', 'roll_deg',
+                'calibrated', 'resolution', 'cpu_percent', 'memory_used_mb', 'memory_percent'
+            ]
+            self.csv_writer.writerow(header)
+            self.logger.info(f"CSV logging started: {filename}")
+            
+        except Exception as e:
+            self.logger.error(f"Error setting up CSV logging: {e}")
+    
+    def write_csv_row(self, gaze_data):
+        """Write a row to CSV file"""
+        if self.csv_writer is None:
+            return
+        
+        try:
+            row = [
+                gaze_data['timestamp'],
+                gaze_data['gaze_x'],
+                gaze_data['gaze_y'],
+                gaze_data['confidence'],
+                gaze_data['fps'],
+                gaze_data['eye_gaze_x'],
+                gaze_data['eye_gaze_y'],
+                gaze_data['head_gaze_x'],
+                gaze_data['head_gaze_y'],
+                gaze_data['raw_gaze_x'],
+                gaze_data['raw_gaze_y'],
+                gaze_data['eye_confidence'],
+                gaze_data['eye_closure_ratio'],
+                gaze_data['eye_weight'],
+                gaze_data['head_weight'],
+                np.degrees(gaze_data['head_pose_angles'][0]) if gaze_data['head_pose_angles'] else 0,
+                np.degrees(gaze_data['head_pose_angles'][1]) if gaze_data['head_pose_angles'] else 0,
+                np.degrees(gaze_data['head_pose_angles'][2]) if gaze_data['head_pose_angles'] else 0,
+                gaze_data['calibrated'],
+                gaze_data['resolution'],
+                gaze_data['cpu_percent'],
+                gaze_data['memory_used_mb'],
+                gaze_data['memory_percent']
+            ]
+            self.csv_writer.writerow(row)
+            
+        except Exception as e:
+            self.logger.error(f"Error writing CSV row: {e}")
+    
+    def close_csv_logging(self):
+        """Close CSV file"""
+        if self.csv_file:
+            self.csv_file.close()
+            self.csv_file = None
+            self.csv_writer = None
+            self.logger.info("CSV logging closed")
     
     def start_calibration(self, mode: str = "point"):
         """Start calibration procedure"""
@@ -428,10 +597,12 @@ class HybridGazeTracker:
             self.current_calibration_point = 0
             self.calibration_start_time = time.time()
             self.calibration_collection_active = True
+            self.logger.info("Point calibration started")
         elif mode == "auto":
             self.calibrator.start_automatic_calibration()
             self.calibration_mode = CalibrationMode.AUTOMATIC_CALIBRATION
             self.calibration_collection_active = True
+            self.logger.info("Automatic calibration started")
     
     def update_calibration(self):
         """Update calibration state machine"""
@@ -452,14 +623,14 @@ class HybridGazeTracker:
         self.calibration_collection_active = False
         self.calibration_mode = CalibrationMode.NONE
         
-        print("Calibration completed. Computing model...")
+        self.logger.info("Calibration completed. Computing model...")
         model = self.calibrator.compute_calibration_model()
         
         if model is not None:
-            print("Calibration model computed successfully!")
+            self.logger.info("Calibration model computed successfully!")
             self.calibrator.save_calibration()
         else:
-            print("Failed to compute calibration model")
+            self.logger.warning("Failed to compute calibration model")
     
     def get_current_calibration_point(self) -> Tuple[float, float]:
         """Get current calibration point coordinates"""
@@ -606,7 +777,7 @@ class HybridGazeTracker:
             rgb_frame.flags.writeable = True
             
         except Exception as e:
-            print(f"Error processing frame: {e}")
+            self.logger.error(f"Error processing frame: {e}")
             return frame, 0.5, 0.5, 0.0, {}
         
         gaze_x, gaze_y, confidence = 0.5, 0.5, 0.0
@@ -764,7 +935,7 @@ class HybridGazeTracker:
             cv2.line(frame, origin, tuple(img_points[2]), (255, 0, 0), 2)  # Z - Blue
             
         except Exception as e:
-            print(f"Visualization error: {e}")
+            self.logger.error(f"Visualization error: {e}")
         
         # Draw calibration points if in calibration mode
         if self.calibration_mode == CalibrationMode.POINT_CALIBRATION and self.calibration_collection_active:
@@ -802,6 +973,9 @@ class HybridGazeTracker:
         if right_iris:
             cv2.circle(frame, (int(right_iris[0]), int(right_iris[1])), 3, (0, 0, 255), -1)
         
+        # Get system stats
+        system_stats = self.system_monitor.get_system_stats()
+        
         # Draw information text
         font_scale = 0.5
         thickness = 1
@@ -813,6 +987,8 @@ class HybridGazeTracker:
             f"Gaze: ({gaze_x/self.config.CAMERA_WIDTH:.2f}, {gaze_y/self.config.CAMERA_HEIGHT:.2f})",
             f"Calibrated: {self.calibrator.is_calibrated}",
             f"Calibration Mode: {self.calibration_mode.name}",
+            f"CPU: {system_stats['cpu_percent']:.1f}%",
+            f"Memory: {system_stats['memory_used_mb']:.0f}MB ({system_stats['memory_percent']:.1f}%)"
         ]
         
         if self.calibration_mode == CalibrationMode.POINT_CALIBRATION and self.calibration_collection_active:
@@ -841,8 +1017,11 @@ class HybridGazeTracker:
         return frame
     
     def get_gaze_data(self, gaze_x, gaze_y, confidence, debug_info):
-        """Format gaze data for output"""
+        """Format gaze data for output with system monitoring"""
         timestamp = datetime.now().isoformat()
+        
+        # Get system statistics
+        system_stats = self.system_monitor.get_system_stats()
         
         data = {
             "timestamp": timestamp,
@@ -862,13 +1041,146 @@ class HybridGazeTracker:
             "eye_weight": float(debug_info.get('eye_weight', 0)),
             "head_weight": float(debug_info.get('head_weight', 0)),
             "head_pose_angles": debug_info.get('head_pose_angles', [0, 0, 0]),
-            "resolution": f"{self.config.CAMERA_WIDTH}x{self.config.CAMERA_HEIGHT}"
+            "resolution": f"{self.config.CAMERA_WIDTH}x{self.config.CAMERA_HEIGHT}",
+            "cpu_percent": float(system_stats['cpu_percent']),
+            "memory_used_mb": float(system_stats['memory_used_mb']),
+            "memory_percent": float(system_stats['memory_percent'])
         }
         
         self.gaze_data.append(data)
+        
+        # Write to CSV if enabled
+        self.write_csv_row(data)
+        
         return data
 
-#  Run Enhanced Hybrid Gaze Tracking with Calibration
+# Enhanced Data Export Functions with System Monitoring
+def save_gaze_data_to_csv(gaze_data, filename=None):
+    """Save gaze data to CSV file with comprehensive formatting"""
+    if filename is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"gaze_data_export_{timestamp}.csv"
+    
+    try:
+        # Create DataFrame
+        df = pd.DataFrame(gaze_data)
+        
+        # Convert head pose angles to degrees for better readability
+        if 'head_pose_angles' in df.columns:
+            df['pitch_deg'] = df['head_pose_angles'].apply(lambda x: np.degrees(x[0]) if x else 0)
+            df['yaw_deg'] = df['head_pose_angles'].apply(lambda x: np.degrees(x[1]) if x else 0)
+            df['roll_deg'] = df['head_pose_angles'].apply(lambda x: np.degrees(x[2]) if x else 0)
+        
+        # Save to CSV
+        df.to_csv(filename, index=False, encoding='utf-8')
+        print(f"Gaze data exported to CSV: {filename}")
+        print(f"Total records: {len(df)}")
+        
+        # Print summary statistics including system metrics
+        if len(df) > 0:
+            print("\nSummary Statistics:")
+            print(f"Average confidence: {df['confidence'].mean():.3f}")
+            print(f"Average FPS: {df['fps'].mean():.1f}")
+            print(f"Gaze X range: [{df['gaze_x'].min():.3f}, {df['gaze_x'].max():.3f}]")
+            print(f"Gaze Y range: [{df['gaze_y'].min():.3f}, {df['gaze_y'].max():.3f}]")
+            print(f"Average CPU usage: {df['cpu_percent'].mean():.1f}%")
+            print(f"Average Memory usage: {df['memory_percent'].mean():.1f}%")
+            print(f"Peak Memory usage: {df['memory_used_mb'].max():.0f}MB")
+            
+        return filename
+        
+    except Exception as e:
+        print(f"Error exporting to CSV: {e}")
+        return None
+
+def save_gaze_data_to_json(gaze_data, filename=None):
+    """Save gaze data to JSON file with system monitoring data"""
+    if filename is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"gaze_data_{timestamp}.json"
+    
+    try:
+        # Add system summary to JSON data
+        export_data = {
+            "metadata": {
+                "export_timestamp": datetime.now().isoformat(),
+                "total_samples": len(gaze_data),
+                "system_summary": {
+                    "avg_cpu_percent": np.mean([d.get('cpu_percent', 0) for d in gaze_data]),
+                    "avg_memory_percent": np.mean([d.get('memory_percent', 0) for d in gaze_data]),
+                    "max_memory_used_mb": max([d.get('memory_used_mb', 0) for d in gaze_data]),
+                    "avg_fps": np.mean([d.get('fps', 0) for d in gaze_data]),
+                    "avg_confidence": np.mean([d.get('confidence', 0) for d in gaze_data])
+                }
+            },
+            "gaze_data": gaze_data
+        }
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(export_data, f, indent=2, ensure_ascii=False)
+        print(f"Gaze data saved to JSON: {filename}")
+        return filename
+    except Exception as e:
+        print(f"Error saving JSON data: {e}")
+        return None
+
+def export_calibration_report(gaze_tracker, filename=None):
+    """Export comprehensive calibration report with system metrics"""
+    if filename is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"calibration_report_{timestamp}.txt"
+    
+    try:
+        # Calculate system statistics from gaze data
+        if gaze_tracker.gaze_data:
+            cpu_stats = {
+                'avg': np.mean([d.get('cpu_percent', 0) for d in gaze_tracker.gaze_data]),
+                'max': max([d.get('cpu_percent', 0) for d in gaze_tracker.gaze_data]),
+                'min': min([d.get('cpu_percent', 0) for d in gaze_tracker.gaze_data])
+            }
+            memory_stats = {
+                'avg_mb': np.mean([d.get('memory_used_mb', 0) for d in gaze_tracker.gaze_data]),
+                'max_mb': max([d.get('memory_used_mb', 0) for d in gaze_tracker.gaze_data]),
+                'avg_percent': np.mean([d.get('memory_percent', 0) for d in gaze_tracker.gaze_data])
+            }
+        else:
+            cpu_stats = {'avg': 0, 'max': 0, 'min': 0}
+            memory_stats = {'avg_mb': 0, 'max_mb': 0, 'avg_percent': 0}
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write("=== Gaze Tracking Calibration Report ===\n")
+            f.write(f"Generated: {datetime.now().isoformat()}\n")
+            f.write(f"Camera Resolution: {gaze_tracker.config.CAMERA_WIDTH}x{gaze_tracker.config.CAMERA_HEIGHT}\n")
+            f.write(f"Calibration Status: {gaze_tracker.calibrator.is_calibrated}\n")
+            f.write(f"Total Gaze Samples: {len(gaze_tracker.gaze_data)}\n")
+            f.write(f"Average FPS: {gaze_tracker.fps:.1f}\n")
+            
+            f.write("\nSystem Performance Metrics:\n")
+            f.write(f"  Average CPU Usage: {cpu_stats['avg']:.1f}%\n")
+            f.write(f"  Maximum CPU Usage: {cpu_stats['max']:.1f}%\n")
+            f.write(f"  Average Memory Usage: {memory_stats['avg_mb']:.0f}MB ({memory_stats['avg_percent']:.1f}%)\n")
+            f.write(f"  Peak Memory Usage: {memory_stats['max_mb']:.0f}MB\n")
+            
+            f.write("\nCalibration Details:\n")
+            if hasattr(gaze_tracker.calibrator, 'calibration_samples'):
+                for point_idx, samples in gaze_tracker.calibrator.calibration_samples.items():
+                    f.write(f"  Point {point_idx}: {len(samples)} samples\n")
+            
+            f.write("\nSystem Configuration:\n")
+            f.write(f"  Eye Gaze Weight: {gaze_tracker.config.EYE_GAZE_WEIGHT}\n")
+            f.write(f"  Head Gaze Weight: {gaze_tracker.config.HEAD_GAZE_WEIGHT}\n")
+            f.write(f"  Smoothing Factor: {gaze_tracker.config.SMOOTHING_FACTOR}\n")
+            f.write(f"  Min Confidence: {gaze_tracker.config.MIN_CONFIDENCE_THRESHOLD}\n")
+            f.write(f"  System Monitor Interval: {gaze_tracker.config.SYSTEM_MONITOR_INTERVAL}s\n")
+        
+        print(f"Calibration report saved: {filename}")
+        return filename
+        
+    except Exception as e:
+        print(f"Error saving calibration report: {e}")
+        return None
+
+# Enhanced Main Function with Comprehensive Logging and System Monitoring
 def run_hybrid_gaze_tracking_with_calibration():
     """Main function to run hybrid gaze tracking with calibration"""
     
@@ -896,14 +1208,19 @@ def run_hybrid_gaze_tracking_with_calibration():
     # Initialize hybrid tracker
     gaze_tracker = HybridGazeTracker(config)
     
-    print("Starting hybrid gaze tracking with calibration...")
+    # Setup CSV logging
+    gaze_tracker.setup_csv_logging()
+    
+    print("Starting hybrid gaze tracking with calibration and system monitoring...")
     print("Controls:")
     print("  'q' - Quit")
-    print("  's' - Save data")
+    print("  's' - Save data (JSON + CSV)")
     print("  'c' - Start point calibration")
     print("  'a' - Start automatic calibration")
     print("  'l' - Load calibration")
     print("  'r' - Reset calibration")
+    print("  'e' - Export calibration report")
+    print("  'm' - Show system metrics")
     
     try:
         while True:
@@ -925,8 +1242,10 @@ def run_hybrid_gaze_tracking_with_calibration():
             if key == ord('q'):
                 break
             elif key == ord('s'):
-                save_gaze_data(gaze_tracker.gaze_data)
-                print(f"Saved {len(gaze_tracker.gaze_data)} samples")
+                # Save data in multiple formats
+                json_file = save_gaze_data_to_json(gaze_tracker.gaze_data)
+                csv_file = save_gaze_data_to_csv(gaze_tracker.gaze_data)
+                print(f"Data saved: {len(gaze_tracker.gaze_data)} samples")
             elif key == ord('c'):
                 gaze_tracker.start_calibration("point")
                 print("Starting point calibration...")
@@ -940,35 +1259,40 @@ def run_hybrid_gaze_tracking_with_calibration():
                 gaze_tracker.calibrator.is_calibrated = False
                 gaze_tracker.calibrator.calibration_model = None
                 print("Calibration reset")
+            elif key == ord('e'):
+                export_calibration_report(gaze_tracker)
+            elif key == ord('m'):
+                # Show current system metrics
+                stats = gaze_tracker.system_monitor.get_system_stats()
+                print(f"\nCurrent System Metrics:")
+                print(f"  CPU: {stats['cpu_percent']:.1f}%")
+                print(f"  Memory: {stats['memory_used_mb']:.0f}MB ({stats['memory_percent']:.1f}%)")
+                print(f"  FPS: {gaze_tracker.fps:.1f}")
+                print(f"  Confidence: {confidence:.3f}")
     
     except KeyboardInterrupt:
         print("Stopping...")
     except Exception as e:
         print(f"Error: {e}")
     finally:
+        # Stop system monitoring
+        gaze_tracker.system_monitor.stop_monitoring()
+        
         cap.release()
         cv2.destroyAllWindows()
         if hasattr(gaze_tracker, 'face_mesh'):
             gaze_tracker.face_mesh.close()
         
+        # Close CSV logging
+        gaze_tracker.close_csv_logging()
+        
         # Save final data
         if gaze_tracker.gaze_data:
-            save_gaze_data(gaze_tracker.gaze_data)
+            json_file = save_gaze_data_to_json(gaze_tracker.gaze_data)
+            csv_file = save_gaze_data_to_csv(gaze_tracker.gaze_data)
+            report_file = export_calibration_report(gaze_tracker)
             print(f"Final data saved: {len(gaze_tracker.gaze_data)} samples")
 
-def save_gaze_data(gaze_data, filename=None):
-    """Save gaze data to JSON file"""
-    if filename is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"hybrid_gaze_data_{timestamp}.json"
-    
-    try:
-        with open(filename, 'w') as f:
-            json.dump(gaze_data, f, indent=2)
-        print(f"Gaze data saved to {filename}")
-    except Exception as e:
-        print(f"Error saving data: {e}")
-
-# Run the enhanced hybrid gaze tracking system with calibration
+# Run the enhanced hybrid gaze tracking system with calibration and system monitoring
 if __name__ == "__main__":
     run_hybrid_gaze_tracking_with_calibration()
