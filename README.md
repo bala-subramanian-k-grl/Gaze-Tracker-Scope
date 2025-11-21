@@ -97,8 +97,7 @@ python gaze_tracker.py
 | **a** | Automatic calibration                |
 | **l** | Load calibration                     |
 | **r** | Reset calibration                    |
-| **e** | Export calibration report            |
-| **m** | Show system performance metrics      |
+
 
 
 ---
@@ -122,11 +121,10 @@ python gaze_tracker.py
 ├── gaze_tracker.py           # Main script
 ├── requirements.txt          # Dependencies
 ├── README.md                 # Documentation
-└── utils/
-    ├── calibration.py        # Calibration module
-    ├── fusion.py             # Hybrid fusion logic
-    ├── visualization.py      # Real-time display
-    └── logger.py             # Optional data logging
+└── gaze_logs/                # auto-created logs (JSON, CSV, TXT)
+    ├── gaze_data_20251120_185918.csv        
+    ├── gaze_data_20251120_185918.json         
+    ├── gaze_data_20251120_185918.txt  
 ```
 
 ---
