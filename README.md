@@ -92,7 +92,7 @@ python gaze_tracker.py
 | Key   | Function                             |
 | ----- | ------------------------------------ |
 | **q** | Quit                                 |
-| **s** | Save gaze tracking data (JSON + CSV) |
+| **s** | Save gaze tracking data (JSON + CSV + TXT) |
 | **c** | Start point calibration              |
 | **a** | Automatic calibration                |
 | **l** | Load calibration                     |
