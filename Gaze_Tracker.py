@@ -29,6 +29,9 @@ class GazeConfig:
     CAMERA_HEIGHT = 960
     FPS = 60
 
+    # Cursor sensitivity (1 = slowest, 10 = fastest)
+    CURSOR_SENSITIVITY = 5
+
     # MediaPipe settings for better accuracy
     MAX_NUM_FACES = 1
     REFINE_LANDMARKS = True
@@ -400,13 +403,20 @@ class SmoothGazeTracker:
         self.current_calibration_point = 0
         self.calibration_start_time = 0
 
+        # Calibration error handling
+        self.GAZE_TOLERANCE = 0.15      # sensitivity for checking if user is looking correctly
+        self.warning_active = False     # show warning on screen
+        self.warning_timer = 0          # timeout for warning
+
         # Performance tracking
         self.frame_count = 0
         self.start_time = time.time()
         self.fps = 0
 
-        print("Smooth Gaze Tracker initialized!")
-        print(f"Logging: {'ENABLED' if config.ENABLE_LOGGING else 'DISABLED'}")
+    def is_gaze_correct(self, raw_x, raw_y, target_x, target_y):
+        dx = abs(raw_x - target_x)
+        dy = abs(raw_y - target_y)
+        return dx <= self.GAZE_TOLERANCE and dy <= self.GAZE_TOLERANCE
 
     def get_eye_region(self, landmarks, eye_indices):
         """Extract eye region coordinates"""
@@ -453,6 +463,7 @@ class SmoothGazeTracker:
 
     def estimate_eye_gaze(self, eye_points, iris_center):
         """Estimate gaze direction from eye features"""
+        # If iris center missing or too few eye points, return low confidence
         if iris_center is None or len(eye_points) < 6:
             return 0.5, 0.5, 0.0, 0.5, 0.5
 
@@ -468,22 +479,25 @@ class SmoothGazeTracker:
         eye_width = eye_right - eye_left
         eye_height = eye_bottom - eye_top
 
-        if eye_width == 0 or eye_height == 0:
+        if eye_width <= 0 or eye_height <= 0:
             return 0.5, 0.5, 0.0, 0.5, 0.5
 
-        # Raw normalized coordinates
+        # Raw normalized coordinates (0..1) inside eye box
         raw_x = (iris_center[0] - eye_left) / eye_width
         raw_y = (iris_center[1] - eye_top) / eye_height
 
-        # Natural mapping
+        # Natural mapping with sigmoid to make center stable
         gaze_x = 1 / (1 + np.exp(-8 * (raw_x - 0.5)))
         gaze_y = 1 / (1 + np.exp(-8 * (raw_y - 0.5)))
 
         gaze_x = np.clip(gaze_x, 0.0, 1.0)
         gaze_y = np.clip(gaze_y, 0.0, 1.0)
 
-        # Confidence calculation
-        confidence = min(1.0, (eye_width * eye_height) / 600.0)
+        # Confidence calculation - scaled by area but lower bounded
+        area = eye_width * eye_height
+        raw_conf = min(1.0, area / 600.0)
+        # Give small positive confidence for reasonable small eyes to avoid permanent 0
+        confidence = float(np.clip(raw_conf, 0.0, 1.0))
 
         return gaze_x, gaze_y, confidence, raw_x, raw_y
 
@@ -495,38 +509,56 @@ class SmoothGazeTracker:
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = self.face_mesh.process(rgb_frame)
         except Exception:
-            return frame, 0.5, 0.5, 0.0, {}
+            # If processing fails, return current smoothed gaze and 0 confidence
+            return frame, self.smoothed_gaze_x, self.smoothed_gaze_y, 0.0, {}
 
+        # Default fallback values
         gaze_x, gaze_y, confidence = 0.5, 0.5, 0.0
         raw_gaze_x, raw_gaze_y = 0.5, 0.5
         debug_info = {}
 
-        if results and results.multi_face_landmarks:
-            for face_landmarks in results.multi_face_landmarks:
-                landmarks = face_landmarks.landmark
+        # --- Warning: no face detected ---
+        if not results or not results.multi_face_landmarks:
+            self.warning_active = True
+            self.warning_timer = time.time()
+            confidence = 0.0
+            # Use smoothed gaze as fallback (so UI doesn't jump)
+            return self.draw_and_return_frame_with_warning(frame, confidence)
 
-                # Head pose estimation
-                rotation_angles, _ = self.head_pose_estimator.estimate_pose(landmarks)
-                head_gaze_x, head_gaze_y = self.head_pose_estimator.head_pose_to_gaze_direction(rotation_angles)
+        # If here, a face is detected — process landmarks
+        for face_landmarks in results.multi_face_landmarks:
+            landmarks = face_landmarks.landmark
 
-                # Eye tracking
-                left_eye = self.get_eye_region(landmarks, self.config.LEFT_EYE_INDICES)
-                right_eye = self.get_eye_region(landmarks, self.config.RIGHT_EYE_INDICES)
+            # Head pose estimation
+            rotation_angles, _ = self.head_pose_estimator.estimate_pose(landmarks)
+            head_gaze_x, head_gaze_y = self.head_pose_estimator.head_pose_to_gaze_direction(rotation_angles)
 
-                left_iris = self.get_iris_center(landmarks, self.config.LEFT_IRIS_INDICES)
-                right_iris = self.get_iris_center(landmarks, self.config.RIGHT_IRIS_INDICES)
+            # Eye tracking
+            left_eye = self.get_eye_region(landmarks, self.config.LEFT_EYE_INDICES)
+            right_eye = self.get_eye_region(landmarks, self.config.RIGHT_EYE_INDICES)
 
-                # Gaze estimation for both eyes
-                left_x, left_y, left_conf, left_raw_x, left_raw_y = self.estimate_eye_gaze(left_eye, left_iris)
-                right_x, right_y, right_conf, right_raw_x, right_raw_y = self.estimate_eye_gaze(right_eye, right_iris)
+            left_iris = self.get_iris_center(landmarks, self.config.LEFT_IRIS_INDICES)
+            right_iris = self.get_iris_center(landmarks, self.config.RIGHT_IRIS_INDICES)
 
-                # Average both eyes
-                eye_gaze_x = (left_x + right_x) / 2
-                eye_gaze_y = (left_y + right_y) / 2
-                eye_confidence = (left_conf + right_conf) / 2
-                raw_gaze_x = (left_raw_x + right_raw_x) / 2
-                raw_gaze_y = (left_raw_y + right_raw_y) / 2
+            # Gaze estimation for both eyes
+            left_x, left_y, left_conf, left_raw_x, left_raw_y = self.estimate_eye_gaze(left_eye, left_iris)
+            right_x, right_y, right_conf, right_raw_x, right_raw_y = self.estimate_eye_gaze(right_eye, right_iris)
 
+            # Average both eyes
+            eye_gaze_x = (left_x + right_x) / 2
+            eye_gaze_y = (left_y + right_y) / 2
+            eye_confidence = (left_conf + right_conf) / 2
+            raw_gaze_x = (left_raw_x + right_raw_x) / 2
+            raw_gaze_y = (left_raw_y + right_raw_y) / 2
+
+            # If irises or eyes missing -> mark confidence 0 and show warning
+            if left_iris is None or right_iris is None or len(left_eye) < 6 or len(right_eye) < 6:
+                self.warning_active = True
+                self.warning_timer = time.time()
+                confidence = 0.0
+                # Use smoothed gaze as fallback
+                gaze_x, gaze_y = self.smoothed_gaze_x, self.smoothed_gaze_y
+            else:
                 # Combine eye gaze and head pose
                 combined_x = eye_gaze_x * self.config.EYE_GAZE_WEIGHT + head_gaze_x * self.config.HEAD_GAZE_WEIGHT
                 combined_y = eye_gaze_y * self.config.EYE_GAZE_WEIGHT + head_gaze_y * self.config.HEAD_GAZE_WEIGHT
@@ -538,78 +570,81 @@ class SmoothGazeTracker:
                 else:
                     gaze_x, gaze_y = combined_x, combined_y
 
-                # Normal smooth tracking
+                # Normalize confidence variable so it's available globally (was bug before)
+                confidence = float(eye_confidence)
+
+                # Normal smooth tracking with sensitivity if confidence sufficient
                 if eye_confidence > self.config.MIN_CONFIDENCE_THRESHOLD:
-                    # Exponential smoothing
-                    self.smoothed_gaze_x = (self.config.SMOOTHING_FACTOR * self.smoothed_gaze_x +
-                                            (1 - self.config.SMOOTHING_FACTOR) * gaze_x)
-                    self.smoothed_gaze_y = (self.config.SMOOTHING_FACTOR * self.smoothed_gaze_y +
-                                            (1 - self.config.SMOOTHING_FACTOR) * gaze_y)
+                    # Apply simple buffer averaging
+                    smoothed_x, smoothed_y = self.apply_simple_smoothing(gaze_x, gaze_y, eye_confidence)
 
-                    # Simple buffer smoothing
-                    smoothed_x, smoothed_y = self.apply_simple_smoothing(
-                        self.smoothed_gaze_x, self.smoothed_gaze_y, eye_confidence
-                    )
+                    # APPLY SENSITIVITY
+                    sensitivity = np.clip(self.config.CURSOR_SENSITIVITY, 1, 10)
+                    factor = sensitivity / 10.0   # convert 1–10 to 0.1–1
 
-                    gaze_x, gaze_y = smoothed_x, smoothed_y
-                    confidence = eye_confidence
+                    # Interpolate between previous & new gaze:
+                    self.smoothed_gaze_x = self.smoothed_gaze_x * (1 - factor) + smoothed_x * factor
+                    self.smoothed_gaze_y = self.smoothed_gaze_y * (1 - factor) + smoothed_y * factor
+
+                    gaze_x, gaze_y = self.smoothed_gaze_x, self.smoothed_gaze_y
                 else:
-                    confidence = max(0.1, eye_confidence)
+                    # If low confidence, don't update smoothed gaze to new noisy values
+                    gaze_x, gaze_y = self.smoothed_gaze_x, self.smoothed_gaze_y
 
-                # Handle calibration
-                if self.calibrating:
-                    elapsed = time.time() - self.calibration_start_time
+            # Handle calibration
+            if self.calibrating:
+                elapsed = time.time() - self.calibration_start_time
 
-                    if elapsed < self.config.CALIBRATION_DURATION:
-                        target_point = self.config.CALIBRATION_POINTS[self.current_calibration_point]
-                        self.calibrator.add_calibration_sample((raw_gaze_x, raw_gaze_y), target_point)
-                    else:
-                        self.current_calibration_point += 1
-                        self.calibration_start_time = time.time()
+                if elapsed < self.config.CALIBRATION_DURATION:
+                    target_point = self.config.CALIBRATION_POINTS[self.current_calibration_point]
+                    self.calibrator.add_calibration_sample((raw_gaze_x, raw_gaze_y), target_point)
+                else:
+                    self.current_calibration_point += 1
+                    self.calibration_start_time = time.time()
 
-                        if self.current_calibration_point >= len(self.config.CALIBRATION_POINTS):
-                            self.calibrating = False
-                            success = self.calibrator.compute_calibration_model()
-                            if success:
-                                print("Calibration completed successfully!")
-                            else:
-                                print("Calibration failed. Please try again.")
+                    if self.current_calibration_point >= len(self.config.CALIBRATION_POINTS):
+                        self.calibrating = False
+                        success = self.calibrator.compute_calibration_model()
+                        if success:
+                            print("Calibration completed successfully!")
                         else:
-                            print(f"Moving to calibration point {self.current_calibration_point + 1}")
+                            print("Calibration failed. Please try again.")
+                    else:
+                        print(f"Moving to calibration point {self.current_calibration_point + 1}")
 
-                # Get system stats
-                system_stats = self.system_monitor.get_system_stats()
+            # Get system stats
+            system_stats = self.system_monitor.get_system_stats()
 
-                # Prepare data for logging
-                screen_x = int(gaze_x * self.config.CAMERA_WIDTH)
-                screen_y = int(gaze_y * self.config.CAMERA_HEIGHT)
+            # Prepare data for logging - convert normalized gaze to screen coords for logs
+            screen_x = int(gaze_x * self.config.CAMERA_WIDTH)
+            screen_y = int(gaze_y * self.config.CAMERA_HEIGHT)
 
-                gaze_data = {
-                    "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                    "gaze_x": screen_x,
-                    "gaze_y": screen_y,
-                    "confidence": round(confidence, 3),
-                    "cpu_percent": system_stats['cpu_percent'],
-                    "memory_used_mb": system_stats['memory_used_mb'],
-                    "memory_percent": system_stats['memory_percent']
-                }
+            gaze_data = {
+                "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                "gaze_x": screen_x,
+                "gaze_y": screen_y,
+                "confidence": round(confidence, 3),
+                "cpu_percent": system_stats['cpu_percent'],
+                "memory_used_mb": system_stats['memory_used_mb'],
+                "memory_percent": system_stats['memory_percent']
+            }
 
-                # Log the data
-                self.data_logger.log_gaze_data(gaze_data)
+            # Log the data
+            self.data_logger.log_gaze_data(gaze_data)
 
-                debug_info = {
-                    'eye_gaze': (float(eye_gaze_x), float(eye_gaze_y)),
-                    'head_gaze': (float(head_gaze_x), float(head_gaze_y)),
-                    'raw_gaze': (float(raw_gaze_x), float(raw_gaze_y)),
-                    'confidence': float(confidence),
-                    'calibrated': self.calibrator.is_calibrated,
-                    'screen_coords': (screen_x, screen_y),
-                    'system_stats': system_stats
-                }
+            debug_info = {
+                'eye_gaze': (float(eye_gaze_x), float(eye_gaze_y)),
+                'head_gaze': (float(head_gaze_x), float(head_gaze_y)),
+                'raw_gaze': (float(raw_gaze_x), float(raw_gaze_y)),
+                'confidence': float(confidence),
+                'calibrated': self.calibrator.is_calibrated,
+                'screen_coords': (screen_x, screen_y),
+                'system_stats': system_stats
+            }
 
-                # Visualization
-                frame = self.draw_visualization(frame, left_eye, right_eye, left_iris, right_iris,
-                                                screen_x, screen_y, confidence, system_stats)
+            # Visualization
+            frame = self.draw_visualization(frame, left_eye, right_eye, left_iris, right_iris,
+                                            screen_x, screen_y, confidence, system_stats)
 
         # Update FPS
         self.frame_count += 1
@@ -619,9 +654,70 @@ class SmoothGazeTracker:
 
         return frame, gaze_x, gaze_y, confidence, debug_info
 
+    def draw_and_return_frame_with_warning(self, frame, confidence):
+        """Helper to draw warning and return a frame when face/eyes missing"""
+        # Use current smoothed gaze to avoid UI jump
+        screen_x = int(self.smoothed_gaze_x * self.config.CAMERA_WIDTH)
+        screen_y = int(self.smoothed_gaze_y * self.config.CAMERA_HEIGHT)
+
+        #warning message for eye and face
+        text = "WARNING: Face/Eyes not detected!"
+        text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)[0]
+
+        h, w, _ = frame.shape
+        x_center = int((w - text_size[0]) / 2)   # center horizontally
+        y_top = 60                               # top position
+
+        cv2.putText(
+        frame,
+        text,
+        (x_center, y_top),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (0, 0, 255),
+        2
+    )
+
+
+        # Auto hide warning after 2 sec
+        if time.time() - self.warning_timer > 2:
+            self.warning_active = False
+
+        # Draw a faded gaze point for continuity
+        cv2.circle(frame, (screen_x, screen_y), 8, (100, 100, 100), -1)
+        cv2.circle(frame, (screen_x, screen_y), 12, (255, 255, 255), 2)
+
+        # Show a small info block (FPS and conf)
+        sys_stats = self.system_monitor.get_system_stats()
+        info_lines = [
+            f"FPS: {self.fps:.1f}",
+            f"Confidence: {confidence:.3f}",
+            f"Calibrated: {self.calibrator.is_calibrated}"
+        ]
+        for i, line in enumerate(info_lines):
+            y_pos = 30 + i * 25
+            cv2.putText(frame, line, (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6, (0, 0, 0), 3)
+            cv2.putText(frame, line, (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6, (255, 255, 255), 1)
+
+        return frame, self.smoothed_gaze_x, self.smoothed_gaze_y, confidence, {}
+
     def draw_visualization(self, frame, left_eye, right_eye, left_iris, right_iris, gaze_x, gaze_y, confidence, system_stats):
         """Draw visualization with system metrics"""
         h, w = frame.shape[:2]
+        x_pos = int(w / 2 - 300) 
+        y_pos = 50   
+
+
+
+        if self.warning_active:
+            cv2.putText(frame, "WARNING: Adjust your position / Look correctly!",
+                        (x_pos, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 3)
+
+            # auto hide warning after 2 sec
+            if time.time() - self.warning_timer > 2:
+                self.warning_active = False
 
         # Draw calibration points if calibrating
         if self.calibrating:
@@ -637,17 +733,22 @@ class SmoothGazeTracker:
                 else:
                     cv2.circle(frame, (point_x, point_y), 15, (100, 100, 100), 2)
 
-        # Draw gaze point
+        # Draw gaze point (gaze_x and gaze_y are passed as screen pixel coords)
         color = (0, 255, 0) if self.calibrator.is_calibrated else (255, 0, 255)
 
-        # Main gaze point
-        cv2.circle(frame, (int(gaze_x), int(gaze_y)), 10, color, -1)
-        cv2.circle(frame, (int(gaze_x), int(gaze_y)), 15, (255, 255, 255), 2)
+        try:
+            cv2.circle(frame, (int(gaze_x), int(gaze_y)), 10, color, -1)
+            cv2.circle(frame, (int(gaze_x), int(gaze_y)), 15, (255, 255, 255), 2)
+        except Exception:
+            pass
 
         # Simple crosshair
         crosshair_size = 25
-        cv2.line(frame, (int(gaze_x - crosshair_size), int(gaze_y)), (int(gaze_x + crosshair_size), int(gaze_y)), (255, 255, 255), 2)
-        cv2.line(frame, (int(gaze_x), int(gaze_y - crosshair_size)), (int(gaze_x), int(gaze_y + crosshair_size)), (255, 255, 255), 2)
+        try:
+            cv2.line(frame, (int(gaze_x - crosshair_size), int(gaze_y)), (int(gaze_x + crosshair_size), int(gaze_y)), (255, 255, 255), 2)
+            cv2.line(frame, (int(gaze_x), int(gaze_y - crosshair_size)), (int(gaze_x), int(gaze_y + crosshair_size)), (255, 255, 255), 2)
+        except Exception:
+            pass
 
         # Draw eye contours
         for point in left_eye + right_eye:
@@ -663,7 +764,6 @@ class SmoothGazeTracker:
         info_lines = [
             f"FPS: {self.fps:.1f}",
             f"Confidence: {confidence:.3f}",
-            f"Gaze: ({gaze_x}, {gaze_y})",
             f"Calibrated: {self.calibrator.is_calibrated}",
             f"CPU: {system_stats['cpu_percent']}%",
             f"RAM: {system_stats['memory_used_mb']}MB ({system_stats['memory_percent']}%)"
