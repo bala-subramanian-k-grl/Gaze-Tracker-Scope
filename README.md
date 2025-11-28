@@ -89,12 +89,15 @@ python gaze_tracker.py
 
 ### Keyboard Controls
 
-| Key | Action |
-|-----|---------|
-| `c` | Start/Stop Calibration |
-| `m` | Manual Point Calibration |
-| `a` | Automatic Calibration |
-| `q` | Quit Program |
+| Key   | Function                             |
+| ----- | ------------------------------------ |
+| **q** | Quit                                 |
+| **s** | Save gaze tracking data (JSON + CSV + TXT) |
+| **c** | Start point calibration              |
+| **l** | Load calibration                     |
+| **r** | Reset calibration                    |
+
+
 
 ---
 
@@ -117,11 +120,10 @@ python gaze_tracker.py
 ├── gaze_tracker.py           # Main script
 ├── requirements.txt          # Dependencies
 ├── README.md                 # Documentation
-└── utils/
-    ├── calibration.py        # Calibration module
-    ├── fusion.py             # Hybrid fusion logic
-    ├── visualization.py      # Real-time display
-    └── logger.py             # Optional data logging
+└── gaze_logs/                # auto-created logs (JSON, CSV, TXT)
+    ├── gaze_data_20251120_185918.csv        
+    ├── gaze_data_20251120_185918.json         
+    ├── gaze_data_20251120_185918.txt  
 ```
 
 ---

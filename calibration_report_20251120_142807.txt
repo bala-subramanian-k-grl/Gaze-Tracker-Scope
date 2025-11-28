@@ -1,0 +1,21 @@
+=== Gaze Tracking Calibration Report ===
+Generated: 2025-11-20T14:28:07.190463
+Camera Resolution: 1280x720
+Calibration Status: False
+Total Gaze Samples: 447
+Average FPS: 26.9
+
+System Performance Metrics:
+  Average CPU Usage: 16.0%
+  Maximum CPU Usage: 21.0%
+  Average Memory Usage: 7436MB (94.9%)
+  Peak Memory Usage: 7573MB
+
+Calibration Details:
+
+System Configuration:
+  Eye Gaze Weight: 0.7
+  Head Gaze Weight: 0.3
+  Smoothing Factor: 0.7
+  Min Confidence: 0.4
+  System Monitor Interval: 2.0s
