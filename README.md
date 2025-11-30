@@ -174,6 +174,18 @@ Adjust speed with + and - keys (1 = slowest, 10 = fastest)
 
 ---
 
+## Common Issues & Warnings (Please Read Before Reporting Bugs)
+
+| Issue / Warning                                   | Cause                                                      | Fix / Note                                                                 |
+|---------------------------------------------------|------------------------------------------------------------|-----------------------------------------------------------------------------|
+| Cursor jumps all over the place                   | You skipped calibration or didn’t set screen corners (`s`) | Always press `s` → click 4 corners → press `c` → calibrate!                |
+| Calibration never advances / stuck on point 1     | Using Blink mode but blinking too fast or too weakly       | Blink once clearly and wait 2–3 seconds per point                         |
+| "OK" button does nothing                          | You are in Blink mode (`b`)                                Press `o` first to switch to OK-button mode                                  |
+| Gaze is offset (e.g. center looks bottom-right)   | Screen corners not set or set in wrong order               Press `s` and click exactly: Top-Left → Top-Right → Bottom-Right → Bottom-Left |
+| Very low confidence (0.00) all the time           | Wearing thick glasses, very low light, or extreme angle    | Improve lighting, remove heavy glasses, face camera straight                 |
+| Program freezes or uses 100% CPU                   | Running on very old laptop or wrong camera resolution       | Try lowering camera resolution in code (e.g. 640×480)                       |
+| Logs folder not created                            | No write permission in folder                               | Run terminal/Python as administrator or move script to Desktop/Documents    |
+
 ## 🗂️ Folder Structure
 
 ```
