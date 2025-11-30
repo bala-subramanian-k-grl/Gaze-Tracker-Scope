@@ -1,7 +1,6 @@
 # 👁️ Gaze Tracking System
 
-A hybrid **Gaze Tracking System** that captures and analyzes human eye gaze using **OpenCV** and **MediaPipe**.  
-It supports both **manual point calibration** and **automatic calibration**, combining **head pose** and **eye gaze** data for accurate gaze estimation.
+A **Gaze Tracking System** that captures and analyzes human eye gaze using **OpenCV** and **MediaPipe**. 
 
 ---
 
@@ -89,8 +88,7 @@ scipy
 ```bash
 python gaze_tracker.py
 ```
-
-**###Calibration Tips (Critical for Accuracy!)**
+**Calibration Tips (Critical for Accuracy!)**
 
 Sit ~50–70 cm from camera
 Good, even lighting on your face (avoid backlight)
@@ -98,6 +96,55 @@ Look directly at each yellow circle
 Keep head as still as possible during calibration
 In blink mode: one clear blink per point when ready
 In OK mode: look + click the green "OK" button
+
+
+
+
+
+
+
+**Set Your Screen Boundaries (Highly Recommended!)**
+Press s → Click these 4 corners in exact order:
+
+Top-Left of your actual screen
+Top-Right
+Bottom-Right
+Bottom-Left
+
+This makes the gaze cursor land exactly where you're looking, even on laptops or external monitors!
+
+
+**Calibrate (Critical for Accuracy!)**
+Press c to start 9-point calibration.
+You now have two options:
+Option A – Blink Mode (Completely Hands-Free)
+
+**Press b (default)**
+Look at the yellow pulsing circle
+Blink once clearly when ready
+Wait for all 20 samples → automatically moves to next point
+Repeat for all 9 points
+
+Option B – OK Button Mode
+
+**Press o**
+Look at the circle
+Click the green OK button when ready
+Repeat for all 9 points
+
+Calibration takes ~60–90 seconds.
+Enjoy Smooth Gaze Control!
+
+Move your eyes → cursor follows smoothly
+Adjust speed with + and - keys (1 = slowest, 10 = fastest)
+**Press l to toggle logging on/off**
+
+**Press q anytime to quit and auto-save logs.**
+
+
+
+
+
 
 ### Keyboard Controls
 
