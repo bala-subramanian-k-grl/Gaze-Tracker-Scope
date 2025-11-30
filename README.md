@@ -7,14 +7,17 @@ It supports both **manual point calibration** and **automatic calibration**, com
 
 ## 🚀 Features
 
-- 🎥 **Real-Time Face & Eye Tracking** — Tracks facial landmarks and iris using MediaPipe.  
-- 🧠 **Hybrid Fusion Engine** — Combines head pose and eye gaze vectors for robust gaze estimation.  
-- ⚙️ **Calibration Modes**
-  - **Point Calibration** (Manual)
-  - **Automatic Calibration** (Adaptive)
-- 📊 **Visualization** — Displays gaze direction and calibration feedback in real time.  
-- 🪶 **Lightweight** — CPU-optimized, runs on standard webcams.  
-- 📁 **Data Logging** — Optional CSV logging for gaze data analysis.  
+- **Real-time gaze tracking** with MediaPipe Face Mesh.
+- **Head pose integration** for enhanced accuracy.
+- **Eye gaze estimation** using iris and eye landmarks.
+- **9-point calibration** (blink-based or OK button-based).
+- **Screen boundary mapping** for precise screen coordinates.
+- **Normal smoothing** for stable gaze points.
+- **Blink detection** for calibration triggers.
+- **System monitoring** (CPU, RAM usage) integrated in logs.
+- **Logging** in JSON, CSV, and TXT formats.
+- **Visualization** overlay with gaze points, crosshair, calibration targets, and warnings.
+- Adjustable **cursor sensitivity** for smoothing responsiveness.
 
 ---
 
@@ -87,16 +90,28 @@ scipy
 python gaze_tracker.py
 ```
 
+**###Calibration Tips (Critical for Accuracy!)**
+
+Sit ~50–70 cm from camera
+Good, even lighting on your face (avoid backlight)
+Look directly at each yellow circle
+Keep head as still as possible during calibration
+In blink mode: one clear blink per point when ready
+In OK mode: look + click the green "OK" button
+
 ### Keyboard Controls
 
-| Key   | Function                             |
-| ----- | ------------------------------------ |
-| **q** | Quit                                 |
-| **s** | Save gaze tracking data (JSON + CSV + TXT) |
-| **c** | Start point calibration              |
-| **l** | Load calibration                     |
-| **r** | Reset calibration                    |
-
+| Key   | Function                               |
+| ----- | ------------------------------------   |
+| **q** | Quit                                   |
+| **s** | Set screen boundaries                  |
+| **c** | Start point calibration                |
+| **r** | Reset calibration                      |
+| **b** | Switch calibration to BLINK method     |
+| **o** | Switch calibration to OK button method |
+| **+** | Increase sensitivity                   |
+| **-** | Decrease sensitivity                   |
+| **l** | Toggle logging                         |
 
 
 ---
