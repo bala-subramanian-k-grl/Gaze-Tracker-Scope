@@ -7,4 +7,5 @@
    1. UI interface to render the real time gazer co-ordinates with different colour
 7. evavlute calibration process, identify the uncertainities during calibration phase and report the fault case
 8. sensitivity configuration level 1 to 10
-9.
+9. 
+10. explain indices value

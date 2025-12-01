@@ -34,7 +34,7 @@ class GazeConfig:
     FPS = 60
 
     # Cursor sensitivity (1 = slowest, 10 = fastest)
-    CURSOR_SENSITIVITY = 5
+    CURSOR_SENSITIVITY = 1
 
     # MediaPipe settings for better accuracy
     MAX_NUM_FACES = 1
