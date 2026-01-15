@@ -1,47 +1,41 @@
+# Sequence Diagram
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Camera as Camera Input
-    participant MediaPipe as MediaPipe Face Mesh
-    participant HeadPose as Head Pose Estimator
-    participant EyeGaze as Eye Gaze Estimator
-    participant Combiner as Gaze Combiner
-    participant Calibrator as Gaze Calibrator
-    participant Smoother as Smoothing Filter
-    participant Output as System Output
+    participant User as User
+    participant Camera
+    participant CV as OpenCV
+    participant SM as Screen Mapper Setup
+    participant FM as MediaPipe FaceMesh
+    participant ET as Eye Tracker
+    participant HP as Head Pose Estimator
+    participant GF as Gaze Fusion
+    participant CAL as Calibration Module
+    participant SMO as Gaze Smoothing
+    participant MAP as Screen Mapper
+    participant UI as Visualization UI
+    participant Log as Log Files
 
-    Note over User,Output: Frame Processing Loop
+    User ->> Camera: Looks at screen
+    Camera ->> CV: Capture video frames
 
-    User->>Camera: Captures RGB Frame
-    Camera->>MediaPipe: Sends Frame
-    MediaPipe->>MediaPipe: Detects Facial Landmarks
+    CV ->> SM: Request screen corner setup
+    User ->> SM: Click 4 screen corners
+    SM -->> CV: Return screen boundaries
 
-    par Head Pose Estimation
-        MediaPipe->>HeadPose: Landmarks Data
-        HeadPose->>HeadPose: solvePnP + Euler Angles
-        HeadPose->>Combiner: Head Gaze Vector
-    and Eye Gaze Estimation
-        MediaPipe->>EyeGaze: Eye/Iris Landmarks
-        EyeGaze->>EyeGaze: Iris Position Analysis
-        EyeGaze->>Combiner: Eye Gaze Vector
-    end
+    CV ->> FM: Send frames for landmark detection
+    FM ->> ET: Provide eye and iris landmarks
+    FM ->> HP: Provide face landmarks
 
-    Combiner->>Combiner: Weighted Fusion<br/>(Eye: 70%, Head: 30%)
+    ET -->> GF: Raw eye gaze
+    HP -->> GF: Head direction
 
-    alt Calibration Active
-        Combiner->>Calibrator: Raw Gaze Coordinates
-        Calibrator->>Calibrator: Apply Calibration Model
-        Calibrator->>Smoother: Calibrated Coordinates
-    else No Calibration
-        Combiner->>Smoother: Raw Coordinates
-    end
+    GF ->> CAL: Combined gaze for calibration
+    CAL -->> GF: Calibrated gaze model
 
-    Smoother->>Smoother: Exponential Smoothing
-    Smoother->>Output: Final Gaze Coordinates
+    GF ->> SMO: Send calibrated gaze
+    SMO -->> MAP: Stable gaze
 
-    Note over Calibrator,User: Calibration Process
-    User->>Calibrator: Start Calibration (Point/Auto)
-    Calibrator->>Calibrator: Collect Training Data
-    Calibrator->>Calibrator: Train Polynomial Model
-    Calibrator->>Output: Calibration Status
-```
+    MAP ->> UI: Map gaze to screen and display
+    MAP ->> Log: Save gaze data and stats
+
+    UI -->> User: Show gaze cursor and status

@@ -1,42 +1,61 @@
-# 👁️ Gaze Tracking System
+# 👁️ Eye Gaze Tracking System
 
-A **Gaze Tracking System** that captures and analyzes human eye gaze using **OpenCV** and **MediaPipe**. 
+A real-time, high-accuracy **Eye Gaze Tracking System** built using **Python, OpenCV, and MediaPipe FaceMesh**.  
+The system tracks eye and head movements, fuses them for stability, applies calibration using regression models, and maps gaze points to screen coordinates for cursor control and visualization.
 
 ---
 
 ## 🚀 Features
 
-- **Real-time gaze tracking** with MediaPipe Face Mesh.
-- **Head pose integration** for enhanced accuracy.
-- **Eye gaze estimation** using iris and eye landmarks.
-- **9-point calibration** (blink-based or OK button-based).
-- **Screen boundary mapping** for precise screen coordinates.
-- **Normal smoothing** for stable gaze points.
-- **Blink detection** for calibration triggers.
-- **System monitoring** (CPU, RAM usage) integrated in logs.
-- **Logging** in JSON, CSV, and TXT formats.
-- **Visualization** overlay with gaze points, crosshair, calibration targets, and warnings.
-- Adjustable **cursor sensitivity** for smoothing responsiveness.
+- 📷 Real-time video capture using OpenCV  
+- 🧠 Face, eye & iris landmark detection with MediaPipe FaceMesh  
+- 👁️ Eye gaze estimation from iris displacement  
+- 🧭 Head pose estimation using facial landmarks  
+- 🔀 Gaze fusion (eye + head) for improved robustness  
+- 🎯 **Calibration system**
+  - Linear Regression
+  - Polynomial Regression (degree 3)
+  - 9-point calibration support  
+- 🗺️ **Mandatory screen boundary setup** (4-corner Screen Mapper)  
+- 🪶 Gaze smoothing to reduce jitter  
+- 🖥️ Live visualization of gaze point and system status  
+- 📝 Logging of gaze data, CPU & RAM usage (CSV/JSON/TXT)  
+- ⚡ Modular, extensible architecture
 
 ---
 
 ## 🧩 System Architecture
 
 ```mermaid
-flowchart TD
-    A[Camera Input] --> B[MediaPipe Face Mesh]
-    B --> C[Landmark Extraction]
-    C --> D[Head Pose Estimation]
-    C --> E[Eye Feature Extraction]
-    C --> F[Iris Detection]
-    D --> G[Head Gaze Vector]
-    E --> H[Eye Gaze Vector]
-    F --> H
-    G --> I[Hybrid Fusion Engine]
-    H --> I
-    I --> J[Gaze Estimation Output]
-    J --> K[Visualization and Logging]
+graph TD
+    Camera --> OpenCV
+    OpenCV --> ScreenSetup
+    ScreenSetup --> FaceMesh
+    FaceMesh --> EyeTracker
+    FaceMesh --> HeadPose
+    EyeTracker --> GazeFusion
+    HeadPose --> GazeFusion
+    GazeFusion --> Calibration
+    Calibration --> Smoothing
+    Smoothing --> ScreenMapper
+    ScreenMapper --> Visualizer
+    ScreenMapper --> Logger
 ```
+## 🛠️ Tech Stack
+
+**Language:**  
+- Python 3.x  
+
+**Libraries & Tools:**  
+- OpenCV – real-time computer vision  
+- MediaPipe – face & iris landmark detection  
+- NumPy – numerical computations  
+- Pandas – data handling & logging  
+- Scikit-learn – regression models for calibration  
+- SciPy – mathematical & spatial transformations  
+- psutil – CPU & memory monitoring  
+- threading – parallel processing  
+- logging – structured system logs  
 
 ---
 
@@ -63,24 +82,7 @@ pip install -r requirements.txt
 
 ---
 
-## 📦 Requirements
 
-Your `requirements.txt` should contain:
-```
-opencv-python
-mediapipe
-numpy
-```
-
-**Optional (for data logging and analysis):**
-```
-pandas
-matplotlib
-scikit-learn
-scipy
-```
-
----
 
 ## ▶️ Usage
 
@@ -88,58 +90,81 @@ scipy
 ```bash
 python gaze_tracker.py
 ```
-**Calibration Tips (Critical for Accuracy!)**
 
-Sit ~50–70 cm from camera
-Good, even lighting on your face (avoid backlight)
-Look directly at each yellow circle
-Keep head as still as possible during calibration
-In blink mode: one clear blink per point when ready
-In OK mode: look + click the green "OK" button
+## 🗺️ Startup Flow
 
+1. 📷 **Camera opens**
 
+2. 🗺️ **Screen Mapper setup**  
+   Click 4 corners in order: Top-Left (TL) → Top-Right (TR) → Bottom-Right (BR) → Bottom-Left (BL)
 
+3. 🎯 **Calibration** (optional but recommended)  
+   - Linear Regression for basic mapping  
+   - Polynomial Regression (degree 3) for non-linear correction  
+   - 9-point calibration grid for better accuracy  
+   Calibration maps raw gaze values → actual screen coordinates.
 
+4. 👁️ **Real-time gaze tracking begins**
 
+⚠️ **Note:** Screen setup is mandatory before tracking starts.
 
+---
 
-**Set Your Screen Boundaries (Highly Recommended!)**
-Press s → Click these 4 corners in exact order:
+## 🖥️ Output
 
-Top-Left of your actual screen
-Top-Right
-Bottom-Right
-Bottom-Left
+- Live gaze point overlaid on camera feed  
+- Cursor / UI movement based on gaze  
+- Log files include:
+  - Gaze data  
+  - Calibration values  
+  - CPU & RAM usage  
+  - Timestamps  
 
-This makes the gaze cursor land exactly where you're looking, even on laptops or external monitors!
+Logs are saved in **CSV/JSON/TXT** formats inside the `logs/` directory.
 
+## 🎯 Calibration Tips (Critical for Accuracy!)
 
-**Calibrate (Critical for Accuracy!)**
-Press c to start 9-point calibration.
-You now have two options:
-Option A – Blink Mode (Completely Hands-Free)
+- Sit ~50–70 cm from the camera  
+- Ensure good, even lighting on your face (avoid backlight)  
+- Look directly at each yellow circle  
+- Keep your head as still as possible during calibration  
 
-**Press b (default)**
-Look at the yellow pulsing circle
-Blink once clearly when ready
-Wait for all 20 samples → automatically moves to next point
-Repeat for all 9 points
+**Calibration Modes:**
 
-Option B – OK Button Mode
+### Option A – Blink Mode (Completely Hands-Free)
+1. Press **b** (default)  
+2. Look at the yellow pulsing circle  
+3. Blink once clearly when ready  
+4. Wait for all 20 samples → automatically moves to next point  
+5. Repeat for all 9 points  
 
-**Press o**
-Look at the circle
-Click the green OK button when ready
-Repeat for all 9 points
+### Option B – OK Button Mode
+1. Press **o**  
+2. Look at the circle  
+3. Click the green **OK** button when ready  
+4. Repeat for all 9 points  
 
-Calibration takes ~60–90 seconds.
-Enjoy Smooth Gaze Control!
+> Calibration takes ~60–90 seconds. Enjoy smooth gaze control!
 
-Move your eyes → cursor follows smoothly
-Adjust speed with + and - keys (1 = slowest, 10 = fastest)
-**Press l to toggle logging on/off**
+---
 
-**Press q anytime to quit and auto-save logs.**
+## 🗺️ Set Your Screen Boundaries (Highly Recommended!)
+1. Press **s** → Click these 4 corners in exact order:  
+   - Top-Left of your actual screen  
+   - Top-Right  
+   - Bottom-Right  
+   - Bottom-Left  
+
+> This ensures the gaze cursor lands exactly where you're looking, even on laptops or external monitors.
+
+---
+
+## ⌨️ Controls During Tracking
+- Move your eyes → cursor follows smoothly  
+- Adjust speed with **+** and **-** keys (1 = slowest, 10 = fastest)  
+- Press **l** to toggle logging on/off  
+- Press **q** anytime to quit and auto-save logs
+
 
 
 
@@ -197,18 +222,33 @@ Adjust speed with + and - keys (1 = slowest, 10 = fastest)
 └── gaze_logs/                # auto-created logs (JSON, CSV, TXT)
     ├── gaze_data_20251120_185918.csv        
     ├── gaze_data_20251120_185918.json         
-    ├── gaze_data_20251120_185918.txt  
+    ├── gaze_data_20251120_185918.txt
+    ├── gaze_debugger.log
 ```
 
 ---
 
-## 🌟 Future Enhancements
+## 🧪 Accuracy Notes
 
-- 🔥 Heatmap visualization for gaze concentration  
-- 📈 Real-time analytics dashboard  
-- 🧩 Deep learning–based gaze refinement  
-- 💻 Web-based gaze tracking (WebGazer.js integration)  
-- 🎯 Eye-controlled UI navigation  
+Accuracy depends on:
+
+- Calibration quality  
+- Lighting conditions  
+- Camera resolution and placement  
+- Head movement vs eye movement balance  
+
+> "Accuracy mainly depends on calibration quality and relative iris displacement, not just landmark detection."
+
+---
+
+## 🔮 Future Enhancements
+
+- Deep learning–based gaze estimation  
+- Multi-user support  
+- Better blink and gesture controls  
+- GUI for calibration and settings  
+- Cross-platform cursor integration
+
 
 ---
 
